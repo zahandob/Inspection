@@ -52,7 +52,7 @@ class StatusCheckCreate(BaseModel):
 
 # Initial Placer models
 income_brackets_default = [
-    "&lt; $25k", "$25k - $50k", "$50k - $100k", "$100k - $200k", ">$200k"
+    "< $25k", "$25k - $50k", "$50k - $100k", "$100k - $200k", ">$200k"
 ]
 
 education_levels_default = [
