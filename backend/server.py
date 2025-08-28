@@ -178,6 +178,10 @@ async def placer_suggest(body: SuggestInput):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Collect existing titles to avoid duplicates
+    existing_docs = await db.experience_cards.find({"user_id": body.user_id}).to_list(1000)
+    existing_titles = { (d.get("title") or "").strip().lower() for d in existing_docs }
+
     # Build prompt
     system = (
         "You generate life experience cards based on a user's basic profile. "
@@ -194,6 +198,7 @@ async def placer_suggest(body: SuggestInput):
         "interests": user.get("interests", []),
         "ethnicity": user.get("ethnicity"),
         "count": body.count,
+        "avoid_titles": list(existing_titles),
     }
 
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -202,7 +207,7 @@ async def placer_suggest(body: SuggestInput):
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": f"Profile JSON:\n{user_msg}\nReturn JSON array only."},
+                {"role": "user", "content": f"Profile JSON:\n{user_msg}\nReturn JSON array only. Avoid rephrasing or repeating any items whose lowercased titles appear in avoid_titles."},
             ],
             response_format={"type": "json_object"},
             temperature=0.4,
@@ -219,9 +224,15 @@ async def placer_suggest(body: SuggestInput):
         if items is None:
             raise ValueError("Model did not return items array")
         cards: List[ExperienceCard] = []
+        seen_titles: set[str] = set(existing_titles)
         for it in items:
+            title_value = (it.get("title", "Untitled") or "").strip()
+            norm_title = title_value.lower()
+            if norm_title in seen_titles:
+                continue
+            seen_titles.add(norm_title)
             cards.append(ExperienceCard(
-                title=it.get("title", "Untitled"),
+                title=title_value,
                 description=it.get("description", ""),
                 rationale=it.get("rationale"),
                 confidence=float(it.get("confidence", 0.6)),
@@ -268,7 +279,10 @@ async def placer_swipe(body: SwipeInput):
 # Fetch a page of cards (for swiper)
 @api_router.get("/placer/cards", response_model=List[ExperienceCard])
 async def placer_cards(user_id: str, limit: int = 10):
-    cursor = db.experience_cards.find({"user_id": user_id}).sort("created_at", -1).limit(limit)
+    # Exclude cards already swiped by this user
+    swipes = await db.swipes.find({"user_id": user_id}).to_list(1000)
+    swiped_ids = { s.get("card_id") for s in swipes }
+    cursor = db.experience_cards.find({"user_id": user_id, "_id": {"$nin": list(swiped_ids)} }).sort("created_at", 1).limit(limit)
     docs = await cursor.to_list(length=limit)
     return [ExperienceCard(
         id=d["_id"],
