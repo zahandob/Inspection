@@ -135,7 +135,6 @@ def ensure_openai_ready():
 # Signup
 @api_router.post("/placer/signup", response_model=UserProfile)
 async def placer_signup(payload: UserProfileCreate):
-    ensure_openai_ready()
     # minimal validation: interests up to 3
     interests = (payload.interests or [])[:3]
 
