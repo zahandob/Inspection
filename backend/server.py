@@ -172,7 +172,6 @@ class SuggestInput(BaseModel):
 async def placer_suggest(body: SuggestInput):
     ensure_openai_ready()
     from openai import OpenAI
-
     user = await db.users.find_one({"_id": body.user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -181,27 +180,25 @@ async def placer_suggest(body: SuggestInput):
     existing_docs = await db.experience_cards.find({"user_id": body.user_id}).to_list(1000)
     existing_titles = { (d.get("title") or "").strip().lower() for d in existing_docs }
 
-    # Build prompt
-    system = (
-        "You generate life experience cards based on a user's basic profile. "
-        "Return STRICT valid JSON array of objects with keys: title, description, rationale, confidence (0-1). "
-        "Experiences should be realistic day-to-day, education/career, social, and hobbies. "
-        "Keep titles short, descriptions concrete."
-    )
-    user_msg = {
-        "first_name": user.get("first_name"),
-        "education": user.get("education"),
-        "location": user.get("where_you_live"),
-        "age": user.get("age"),
-        "income_bracket": user.get("income_bracket"),
-        "interests": user.get("interests", []),
-        "ethnicity": user.get("ethnicity"),
-        "count": body.count,
-        "avoid_titles": list(existing_titles),
-    }
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
     try:
+        system = (
+            "You generate life experience cards based on a user's basic profile. "
+            "Return STRICT valid JSON array of objects with keys: title, description, rationale, confidence (0-1). "
+            "Experiences should be realistic day-to-day, education/career, social, and hobbies. "
+            "Keep titles short, descriptions concrete."
+        )
+        user_msg = {
+            "first_name": user.get("first_name"),
+            "education": user.get("education"),
+            "location": user.get("where_you_live"),
+            "age": user.get("age"),
+            "income_bracket": user.get("income_bracket"),
+            "interests": user.get("interests", []),
+            "ethnicity": user.get("ethnicity"),
+            "count": body.count,
+            "avoid_titles": list(existing_titles),
+        }
+        client = OpenAI(api_key=OPENAI_API_KEY)
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
@@ -215,11 +212,9 @@ async def placer_suggest(body: SuggestInput):
         content = resp.choices[0].message.content
         import json
         data = json.loads(content)
-        # Support either {"items": [...]} or direct array
         items = data.get("items") if isinstance(data, dict) else data
-        if items is None:
-            # maybe model returned {"experiences": [...]}
-            items = data.get("experiences") if isinstance(data, dict) else None
+        if items is None and isinstance(data, dict):
+            items = data.get("experiences")
         if items is None:
             raise ValueError("Model did not return items array")
         cards: List[ExperienceCard] = []
@@ -249,8 +244,6 @@ async def placer_suggest(body: SuggestInput):
         if batch:
             await db.experience_cards.insert_many(batch)
         return cards
-    except HTTPException:
-        raise
     except Exception as e:
         logger.exception("OpenAI suggestion error")
         raise HTTPException(status_code=500, detail=f"Suggestion generation failed: {str(e)}")
