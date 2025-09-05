@@ -24,6 +24,8 @@ const SignUp = ({ onCreated }) => {
   const api = useApi();
   const [loading, setLoading] = useState(false);
   const [options, setOptions] = useState({ income_brackets: [], education_levels: [], ethnicity_options: [] });
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [envError, setEnvError] = useState(null);
 
   const [form, setForm] = useState({
     first_name: "",
@@ -40,12 +42,22 @@ const SignUp = ({ onCreated }) => {
   });
 
   useEffect(() => {
+    if (!BACKEND_URL) {
+      setEnvError("Backend URL is not configured. Set REACT_APP_BACKEND_URL in Vercel.");
+      toast({ title: "Configuration error", description: "Backend URL missing. Please configure REACT_APP_BACKEND_URL." });
+      setOptionsLoading(false);
+      return;
+    }
     const loadOpts = async () => {
+      setOptionsLoading(true);
       try {
         const r = await api.get("/placer/options");
-        setOptions(r.data);
+        setOptions(r.data || { income_brackets: [], education_levels: [], ethnicity_options: [] });
       } catch (e) {
         console.error(e);
+        toast({ title: "Error", description: e?.response?.data?.detail || "Failed to load options" });
+      } finally {
+        setOptionsLoading(false);
       }
     };
     loadOpts();
@@ -55,6 +67,7 @@ const SignUp = ({ onCreated }) => {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (envError) return;
     setLoading(true);
     try {
       const interests = form.interests_text
@@ -92,6 +105,9 @@ const SignUp = ({ onCreated }) => {
         <CardTitle>Create your profile</CardTitle>
       </CardHeader>
       <CardContent>
+        {envError && (
+          <div className="text-sm text-red-600 mb-3">{envError}</div>
+        )}
         <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label>First Name</Label>
@@ -115,9 +131,9 @@ const SignUp = ({ onCreated }) => {
           </div>
           <div>
             <Label>Education</Label>
-            <Select onValueChange={(v) => setForm((f) => ({ ...f, education: v }))}>
+            <Select value={form.education} onValueChange={(v) => setForm((f) => ({ ...f, education: v }))} disabled={optionsLoading}>
               <SelectTrigger>
-                <SelectValue placeholder="Select education" />
+                <SelectValue placeholder={optionsLoading ? "Loading…" : "Select education"} />
               </SelectTrigger>
               <SelectContent>
                 {options.education_levels.map((o) => (
@@ -136,9 +152,9 @@ const SignUp = ({ onCreated }) => {
           </div>
           <div>
             <Label>Income/Parental Income</Label>
-            <Select onValueChange={(v) => setForm((f) => ({ ...f, income_bracket: v }))}>
+            <Select value={form.income_bracket} onValueChange={(v) => setForm((f) => ({ ...f, income_bracket: v }))} disabled={optionsLoading}>
               <SelectTrigger>
-                <SelectValue placeholder="Select bracket" />
+                <SelectValue placeholder={optionsLoading ? "Loading…" : "Select bracket"} />
               </SelectTrigger>
               <SelectContent>
                 {options.income_brackets.map((o) => (
@@ -153,9 +169,9 @@ const SignUp = ({ onCreated }) => {
           </div>
           <div>
             <Label>Ethnicity (optional)</Label>
-            <Select onValueChange={(v) => setForm((f) => ({ ...f, ethnicity: v }))}>
+            <Select value={form.ethnicity} onValueChange={(v) => setForm((f) => ({ ...f, ethnicity: v }))} disabled={optionsLoading}>
               <SelectTrigger>
-                <SelectValue placeholder="Select ethnicity" />
+                <SelectValue placeholder={optionsLoading ? "Loading…" : "Select ethnicity"} />
               </SelectTrigger>
               <SelectContent>
                 {options.ethnicity_options.map((o) => (
@@ -165,7 +181,7 @@ const SignUp = ({ onCreated }) => {
             </Select>
           </div>
           <div className="md:col-span-2 flex justify-end gap-3 mt-2">
-            <Button type="submit" disabled={loading}>Create Profile</Button>
+            <Button type="submit" disabled={loading || optionsLoading || !!envError}>Create Profile</Button>
           </div>
         </form>
       </CardContent>
